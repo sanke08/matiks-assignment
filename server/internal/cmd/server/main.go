@@ -38,8 +38,24 @@ func main() {
 
 	log.Println("Server started at :" + strconv.Itoa(cfg.SrvPort))
 
-	if err := http.ListenAndServe(":"+strconv.Itoa(cfg.SrvPort), mux); err != nil {
+	handler := enableCORS(mux)
+
+	if err := http.ListenAndServe(":"+strconv.Itoa(cfg.SrvPort), handler); err != nil {
 		log.Fatal(err)
 	}
+}
 
+func enableCORS(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+
+		if r.Method == "OPTIONS" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
 }
