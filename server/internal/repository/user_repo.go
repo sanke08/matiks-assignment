@@ -59,31 +59,26 @@ func (r *PostgresUserRepository) GetLeaderboard(limit int, offset int) ([]models
 
 // GetUserWithRank implements UserRepository.
 func (r *PostgresUserRepository) GetUserWithRank(username string) (*models.User, int, error) {
-	type result struct {
-		ID       int
-		Username string
-		Rating   int
-		Rank     int
-	}
-
-	var res result
-	query := `
-		SELECT id, username, rating, rank FROM (
-			SELECT id, username, rating,
-			DENSE_RANK() OVER (ORDER BY rating DESC) as rank
-			FROM users
-		) ranked
-		WHERE username = ?
-	`
-	err := r.db.Raw(query, username).Scan(&res).Error
+	var user models.User
+	// 1. Get the user's rating
+	err := r.db.Where("username = ?", username).First(&user).Error
 	if err != nil {
 		return nil, 0, err
 	}
-	return &models.User{
-		ID:       res.ID,
-		Username: res.Username,
-		Rating:   res.Rating,
-	}, res.Rank, nil
+
+	// 2. Count distinct ratings higher than this user's rating
+	// Rank = (count of distinct ratings > current_rating) + 1
+	var rank int64
+	err = r.db.Model(&models.User{}).
+		Where("rating > ?", user.Rating).
+		Select("COUNT(DISTINCT rating)").
+		Scan(&rank).Error
+
+	if err != nil {
+		return nil, 0, err
+	}
+
+	return &user, int(rank) + 1, nil
 }
 
 // UpdateRating implements UserRepository.

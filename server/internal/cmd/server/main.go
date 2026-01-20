@@ -20,7 +20,9 @@ func main() {
 
 	leaderboardService := services.NewLeaderboardService(userRepo)
 
-	leaderboardHandler := handlers.NewLeaderboardHandler(leaderboardService)
+	simulationService := services.NewSimulationService(userRepo)
+
+	leaderboardHandler := handlers.NewLeaderboardHandler(leaderboardService, simulationService)
 
 	mux := http.NewServeMux()
 
@@ -28,6 +30,11 @@ func main() {
 	mux.HandleFunc("PUT /users/rating", leaderboardHandler.UpdateRating)
 	mux.HandleFunc("GET /leaderboard", leaderboardHandler.GetLeaderboard)
 	mux.HandleFunc("GET /users/rank", leaderboardHandler.GetUserWithRank)
+
+	// Simulation routes
+	mux.HandleFunc("POST /simulation/start", leaderboardHandler.StartSimulation)
+	mux.HandleFunc("POST /simulation/stop", leaderboardHandler.StopSimulation)
+	mux.HandleFunc("GET /simulation/status", leaderboardHandler.GetSimulationStatus)
 
 	log.Println("Server started at :" + strconv.Itoa(cfg.SrvPort))
 

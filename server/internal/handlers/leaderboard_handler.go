@@ -9,12 +9,38 @@ import (
 
 type LeaderboardHandler struct {
 	leaderboardService *services.LeaderboardService
+	simulationService  *services.SimulationService
 }
 
-func NewLeaderboardHandler(leaderboardService *services.LeaderboardService) *LeaderboardHandler {
+func NewLeaderboardHandler(
+	leaderboardService *services.LeaderboardService,
+	simulationService *services.SimulationService,
+) *LeaderboardHandler {
 	return &LeaderboardHandler{
 		leaderboardService: leaderboardService,
+		simulationService:  simulationService,
 	}
+}
+
+func (h *LeaderboardHandler) StartSimulation(w http.ResponseWriter, r *http.Request) {
+	h.simulationService.Start()
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(`{"status": "simulation started"}`))
+}
+
+func (h *LeaderboardHandler) StopSimulation(w http.ResponseWriter, r *http.Request) {
+	h.simulationService.Stop()
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(`{"status": "simulation stopped"}`))
+}
+
+func (h *LeaderboardHandler) GetSimulationStatus(w http.ResponseWriter, r *http.Request) {
+	status := "stopped"
+	if h.simulationService.IsRunning() {
+		status = "running"
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": status})
 }
 
 type createUserRequest struct {
