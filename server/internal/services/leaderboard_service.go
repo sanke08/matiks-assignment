@@ -43,7 +43,7 @@ func (s *LeaderboardService) UpdateRating(userId, newRating int) error {
 	return s.userRepo.UpdateRating(userId, newRating)
 }
 
-func (s *LeaderboardService) GetLeaderboard(limit, offset int) ([]models.User, error) {
+func (s *LeaderboardService) GetLeaderboard(limit, offset int) ([]repository.UserWithRank, error) {
 	if limit <= 0 {
 		return nil, errors.New("limit must be greater than 0")
 	}

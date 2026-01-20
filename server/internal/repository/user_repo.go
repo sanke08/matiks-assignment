@@ -7,11 +7,16 @@ import (
 	"gorm.io/gorm"
 )
 
+type UserWithRank struct {
+	models.User
+	Rank int `json:"rank"`
+}
+
 type UserRepository interface {
 	Create(u *models.User) error
 	UpdateRating(userID int, newRating int) error
 	GetByUsername(username string) (*models.User, error)
-	GetLeaderboard(limit, offset int) ([]models.User, error)
+	GetLeaderboard(limit, offset int) ([]UserWithRank, error)
 	GetUserWithRank(username string) (*models.User, int, error)
 }
 
@@ -42,14 +47,15 @@ func (r *PostgresUserRepository) GetByUsername(username string) (*models.User, e
 }
 
 // GetLeaderboard implements UserRepository.
-func (r *PostgresUserRepository) GetLeaderboard(limit int, offset int) ([]models.User, error) {
-	var users []models.User
-	err := r.db.
-		Order("rating DESC").
-		Limit(limit).
-		Offset(offset).
-		Find(&users).
-		Error
+func (r *PostgresUserRepository) GetLeaderboard(limit int, offset int) ([]UserWithRank, error) {
+	var users []UserWithRank
+	query := `
+		SELECT *, DENSE_RANK() OVER (ORDER BY rating DESC) as rank
+		FROM users
+		ORDER BY rating DESC
+		LIMIT ? OFFSET ?
+	`
+	err := r.db.Raw(query, limit, offset).Scan(&users).Error
 
 	if err != nil {
 		return nil, err
@@ -61,7 +67,7 @@ func (r *PostgresUserRepository) GetLeaderboard(limit int, offset int) ([]models
 func (r *PostgresUserRepository) GetUserWithRank(username string) (*models.User, int, error) {
 	var user models.User
 	// 1. Get the user's rating
-	err := r.db.Where("username = ?", username).First(&user).Error
+	err := r.db.Where("username LIKE ?", "%"+username+"%").First(&user).Error
 	if err != nil {
 		return nil, 0, err
 	}
