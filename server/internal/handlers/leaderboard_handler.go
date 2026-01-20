@@ -1,0 +1,117 @@
+package handlers
+
+import (
+	"encoding/json"
+	"leaderboard/internal/services"
+	"net/http"
+	"strconv"
+)
+
+type LeaderboardHandler struct {
+	leaderboardService *services.LeaderboardService
+}
+
+func NewLeaderboardHandler(leaderboardService *services.LeaderboardService) *LeaderboardHandler {
+	return &LeaderboardHandler{
+		leaderboardService: leaderboardService,
+	}
+}
+
+type createUserRequest struct {
+	Username string `json:"username"`
+	Rating   int    `json:"rating"`
+}
+
+func (h *LeaderboardHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
+	var req createUserRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	user, err := h.leaderboardService.CreateUser(req.Username, req.Rating)
+	if err != nil {
+		http.Error(w, "Failed to create user", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(user)
+}
+
+type updateRatingRequest struct {
+	Rating int `json:"rating"`
+}
+
+func (h *LeaderboardHandler) UpdateRating(w http.ResponseWriter, r *http.Request) {
+
+	idStr := r.URL.Query().Get("id")
+	if idStr == "" {
+		http.Error(w, "Missing idStr", http.StatusBadRequest)
+		return
+	}
+
+	userId, err := strconv.Atoi(idStr)
+	if err != nil {
+		http.Error(w, "Invalid id", http.StatusBadRequest)
+		return
+	}
+
+	var req updateRatingRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if err := h.leaderboardService.UpdateRating(userId, req.Rating); err != nil {
+		http.Error(w, "Failed to update rating", http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *LeaderboardHandler) GetLeaderboard(w http.ResponseWriter, r *http.Request) {
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
+
+	users, err := h.leaderboardService.GetLeaderboard(limit, offset)
+
+	if err != nil {
+		http.Error(w, "Failed to get leaderboard", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(users)
+}
+
+type userWithRankResponse struct {
+	ID       int    `json:"id"`
+	Username string `json:"username"`
+	Rating   int    `json:"rating"`
+	Rank     int    `json:"rank"`
+}
+
+func (h *LeaderboardHandler) GetUserWithRank(w http.ResponseWriter, r *http.Request) {
+	username := r.URL.Query().Get("username")
+	if username == "" {
+		http.Error(w, "Missing username", http.StatusBadRequest)
+		return
+	}
+
+	user, rank, err := h.leaderboardService.GetUserWithRank(username)
+	if err != nil {
+		http.Error(w, "Failed to get user with rank", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(userWithRankResponse{
+		ID:       user.ID,
+		Username: user.Username,
+		Rating:   user.Rating,
+		Rank:     rank,
+	})
+}
