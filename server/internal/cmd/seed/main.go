@@ -43,6 +43,9 @@ func main() {
 }
 
 func ensureSchema(db *gorm.DB) error {
+	// Drop table for a clean reset of IDs and data
+	db.Exec("DROP TABLE IF EXISTS users CASCADE")
+
 	query := `
 	CREATE TABLE IF NOT EXISTS users (
 		id INT PRIMARY KEY,
@@ -66,6 +69,7 @@ func seedUsers(db *gorm.DB) error {
 
 	for i := 1; i <= totalUsers; i++ {
 		user := models.User{
+			ID:       i,
 			Username: fmt.Sprintf("user_%05d", i),
 			Rating:   rand.Intn(maxRating-minRating+1) + minRating,
 		}

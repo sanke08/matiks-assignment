@@ -64,14 +64,15 @@ func (s *SimulationService) run(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			// Simulating a real update: Pick a random ID and change rating
-			// Note: We know we have users with IDs 1 to 10000 from seeding
-			randomID := rand.Intn(10000) + 1
-			newRating := rand.Intn(4901) + 100 // 100 to 5000
+			// Update 10 random users every tick for more visible changes
+			for j := 0; j < 10; j++ {
+				randomID := rand.Intn(10000) + 1
+				newRating := rand.Intn(4901) + 100 // 100 to 5000
 
-			err := s.userRepo.UpdateRating(randomID, newRating)
-			if err != nil {
-				log.Printf("Simulation error updating user %d: %v", randomID, err)
+				err := s.userRepo.UpdateRating(randomID, newRating)
+				if err != nil {
+					log.Printf("Simulation error updating user %d: %v", randomID, err)
+				}
 			}
 		}
 	}
