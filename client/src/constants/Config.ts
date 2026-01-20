@@ -1,4 +1,4 @@
-export const API_URL = 'http://localhost:8080'; // Default for Android Emulator
+export const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:8080'; // Default for Android Emulator
 // Use your actual IP if testing on a physical device, e.g., 'http://192.168.1.XX:8080'
 
 export const COLORS = {
