@@ -73,8 +73,18 @@ func (h *LeaderboardHandler) UpdateRating(w http.ResponseWriter, r *http.Request
 }
 
 func (h *LeaderboardHandler) GetLeaderboard(w http.ResponseWriter, r *http.Request) {
-	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
+	limitStr := r.URL.Query().Get("limit")
+	offsetStr := r.URL.Query().Get("offset")
+
+	limit, err := strconv.Atoi(limitStr)
+	if err != nil || limit <= 0 {
+		limit = 50 // Default limit
+	}
+
+	offset, _ := strconv.Atoi(offsetStr)
+	if offset < 0 {
+		offset = 0
+	}
 
 	users, err := h.leaderboardService.GetLeaderboard(limit, offset)
 
