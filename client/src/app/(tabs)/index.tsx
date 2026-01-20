@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import { 
   StyleSheet, 
   View, 
@@ -9,6 +9,7 @@ import {
   RefreshControl,
   Platform
 } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { COLORS, API_URL } from '@/src/constants/Config';
 import { LeaderboardItem } from '@/src/components/LeaderboardItem';
 import { ThemedText } from '@/src/components/themed-text';
@@ -21,53 +22,80 @@ interface User {
   rank: number;
 }
 
+const PAGE_SIZE = 50;
+
 export default function LeaderboardScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [users, setUsers] = useState<User[]>([]);
-  const [isSimulating, setIsSimulating] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
+  
+  const offsetRef = useRef(0);
 
-  const fetchLeaderboard = async () => {
+  const fetchLeaderboard = async (isPoll = false, isRefresh = false) => {
+    if (loadingMore && !isPoll && !isRefresh) return;
+    
+    const currentOffset = isRefresh ? 0 : offsetRef.current;
+    
     try {
-      const response = await fetch(`${API_URL}/leaderboard?limit=50`);
-      const data = await response.json();
-      setUsers(data || []);
+      const response = await fetch(`${API_URL}/leaderboard?limit=${PAGE_SIZE}&offset=${currentOffset}`);
+      const data: User[] = await response.json();
+      
+      if (isRefresh || (isPoll && currentOffset === 0)) {
+        // For poll/refresh of the first page, replace or merge carefully
+        // Here we replace to ensure rank consistency
+        setUsers(data || []);
+        if (isRefresh) {
+          offsetRef.current = 0;
+          setHasMore(true);
+        }
+      } else {
+        // For pagination, append
+        setUsers(prev => [...prev, ...(data || [])]);
+        if (!data || data.length < PAGE_SIZE) {
+          setHasMore(false);
+        }
+      }
     } catch (error) {
       console.error('Error fetching leaderboard:', error);
     } finally {
       setLoading(false);
       setRefreshing(false);
+      setLoadingMore(false);
     }
   };
 
-  // const checkSimulationStatus = async () => {
-  //   try {
-  //     const response = await fetch(`${API_URL}/simulation/status`);
-  //     const data = await response.json();
-  //     setIsSimulating(data.status === 'running');
-  //   } catch (error) {
-  //     console.log('Error checking simulation status');
-  //   }
-  // };
+  // Focus-aware polling for the FIRST PAGE ONLY to reduce costs
+  useFocusEffect(
+    useCallback(() => {
+      // Initial load
+      if (users.length === 0) fetchLeaderboard();
 
-  useEffect(() => {
-    fetchLeaderboard();
-    // checkSimulationStatus();
+      const interval = setInterval(() => {
+        // Only poll if we are at the top (Page 1) to save cost 
+        // and prevent confusing the user while they are scrolling deep
+        if (offsetRef.current === 0) {
+          fetchLeaderboard(true);
+        }
+      }, 5000); // 5s interval is better for 10k users than 2s
 
-    // Poll for updates every 2 seconds to show "Live" updates
-    const interval = setInterval(() => {
-      fetchLeaderboard();
-      // checkSimulationStatus();
-    }, 2000);
-
-    return () => clearInterval(interval);
-  }, []);
+      return () => clearInterval(interval);
+    }, [users.length])
+  );
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
-    fetchLeaderboard();
-    // checkSimulationStatus();
+    fetchLeaderboard(false, true);
   }, []);
+
+  const loadMore = () => {
+    if (!hasMore || loadingMore || loading) return;
+    
+    setLoadingMore(true);
+    offsetRef.current += PAGE_SIZE;
+    fetchLeaderboard();
+  };
 
   if (loading && !refreshing) {
     return (
@@ -86,22 +114,18 @@ export default function LeaderboardScreen() {
           <ThemedText type="title" style={styles.title}>Global Ranks</ThemedText>
           <Text style={styles.subtitle}>Top Performers</Text>
         </View>
-        {isSimulating && (
-          <View style={styles.liveIndicator}>
-            <View style={styles.liveDot} />
-            <Text style={styles.liveText}>LIVE</Text>
-          </View>
-        )}
       </View>
 
       <FlatList
         data={users}
-        keyExtractor={(item) => item.ID.toString()}
+        keyExtractor={(item, index) => `${item.ID}-${index}`}
         renderItem={({ item }) => (
           <LeaderboardItem user={item} rank={item.rank} />
         )}
         contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
+        onEndReached={loadMore}
+        onEndReachedThreshold={0.5}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -114,6 +138,13 @@ export default function LeaderboardScreen() {
           <View style={styles.emptyContainer}>
             <Text style={styles.emptyText}>No users found in leaderboard.</Text>
           </View>
+        }
+        ListFooterComponent={
+          loadingMore ? (
+            <View style={styles.footerLoader}>
+              <ActivityIndicator color={COLORS.primary} />
+            </View>
+          ) : null
         }
       />
     </SafeAreaView>
@@ -153,32 +184,13 @@ const styles = StyleSheet.create({
     fontSize: 14,
     marginTop: -4,
   },
-  liveIndicator: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#333',
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderRadius: 0,
-    borderWidth: 1,
-    borderColor: COLORS.white,
-  },
-  liveDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 0,
-    backgroundColor: COLORS.white,
-    marginRight: 8,
-  },
-  liveText: {
-    color: COLORS.white,
-    fontSize: 11,
-    fontWeight: 'bold',
-    letterSpacing: 1,
-  },
   listContent: {
-    paddingHorizontal: 0, // Full width items
+    paddingHorizontal: 0, 
     paddingBottom: 40,
+  },
+  footerLoader: {
+    paddingVertical: 20,
+    alignItems: 'center',
   },
   emptyContainer: {
     marginTop: 100,
