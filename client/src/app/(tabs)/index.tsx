@@ -18,6 +18,7 @@ interface User {
   ID: number;
   Username: string;
   Rating: number;
+  rank: number;
 }
 
 export default function LeaderboardScreen() {
@@ -96,8 +97,8 @@ export default function LeaderboardScreen() {
       <FlatList
         data={users}
         keyExtractor={(item) => item.ID.toString()}
-        renderItem={({ item, index }) => (
-          <LeaderboardItem user={item} rank={index + 1} />
+        renderItem={({ item }) => (
+          <LeaderboardItem user={item} rank={item.rank} />
         )}
         contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
