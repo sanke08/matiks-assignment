@@ -23,8 +23,7 @@ type UserRepository interface {
 	Create(u *models.User) error
 	UpdateRating(userID int, newRating int) error
 	GetByUsername(username string) (*models.User, error)
-	GetLeaderboard(limit, offset int) ([]UserWithRank, error)
-	GetUserWithRank(username string) (*models.User, int, error)
+	GetLeaderboard(limit, offset int, query string) ([]UserWithRank, error)
 	SyncToRedis() error
 }
 
@@ -98,56 +97,88 @@ func (r *PostgresUserRepository) GetByUsername(username string) (*models.User, e
 }
 
 // GetLeaderboard implements UserRepository.
-func (r *PostgresUserRepository) GetLeaderboard(limit int, offset int) ([]UserWithRank, error) {
-	if r.rdb == nil {
+func (r *PostgresUserRepository) GetLeaderboard(limit int, offset int, query string) ([]UserWithRank, error) {
+	var users []models.User
+	var err error
+
+	// 1. Fetch matching users depending on if there's a search query
+	if query != "" {
+		// Search Case: Fetch from DB first (SQL query with LIKE)
+		err = r.db.Where("username LIKE ?", "%"+query+"%").
+			Order("rating DESC").
+			Limit(limit).
+			Offset(offset).
+			Find(&users).Error
+	} else if r.rdb != nil {
+		// Global Leaderboard Case: Fetch directly from Redis
+		res, err := r.rdb.ZRevRangeWithScores(context.Background(), LeaderboardKey, int64(offset), int64(offset+limit-1)).Result()
+		if err != nil || len(res) == 0 {
+			return []UserWithRank{}, nil
+		}
+
+		// Convert Redis members back to user objects
+		for _, z := range res {
+			member := z.Member.(string)
+			parts := strings.Split(member, ":")
+			if len(parts) < 2 {
+				continue
+			}
+			id, _ := strconv.Atoi(parts[1])
+			users = append(users, models.User{
+				ID:       id,
+				Username: parts[0],
+				Rating:   int(z.Score),
+			})
+		}
+	} else {
+		// Fallback: No Redis, use SQL
 		return r.getLeaderboardSQL(limit, offset)
 	}
 
+	if err != nil || (len(users) == 0 && query != "") {
+		return []UserWithRank{}, err
+	}
+
+	// 2. Fetch/Calculate Ranks (Tie-aware: 1, 1, 3)
+	results := make([]UserWithRank, 0, len(users))
 	ctx := context.Background()
-	// 1. Fetch Top N members from Redis
-	res, err := r.rdb.ZRevRangeWithScores(ctx, LeaderboardKey, int64(offset), int64(offset+limit-1)).Result()
-	if err != nil || len(res) == 0 {
-		return []UserWithRank{}, nil
-	}
 
-	// 2. Optimization: Only count unique scores to save Redis resources
-	uniqueScores := make(map[float64]*redis.IntCmd)
-	pipe := r.rdb.Pipeline()
+	if r.rdb != nil {
+		// Optimization: Batch rank calculation via Pipeline
+		pipe := r.rdb.Pipeline()
+		uniqueScores := make(map[float64]*redis.IntCmd)
 
-	for _, z := range res {
-		if _, exists := uniqueScores[z.Score]; !exists {
-			// Optimization: Request rank only once per unique score
-			uniqueScores[z.Score] = pipe.ZCount(ctx, LeaderboardKey, "("+strconv.FormatFloat(z.Score, 'f', -1, 64), "+inf")
+		for _, user := range users {
+			score := float64(user.Rating)
+			if _, exists := uniqueScores[score]; !exists {
+				uniqueScores[score] = pipe.ZCount(ctx, LeaderboardKey, "("+strconv.FormatFloat(score, 'f', -1, 64), "+inf")
+			}
+		}
+		_, _ = pipe.Exec(ctx)
+
+		for _, user := range users {
+			higherCount, _ := uniqueScores[float64(user.Rating)].Result()
+			results = append(results, UserWithRank{
+				User: user,
+				Rank: int(higherCount) + 1,
+			})
+		}
+	} else {
+		// Fallback to SQL Rank if Redis is down
+		for _, user := range users {
+			var rank int64
+			r.db.Model(&models.User{}).
+				Where("rating > ?", user.Rating).
+				Select("COUNT(DISTINCT rating)").
+				Scan(&rank)
+			results = append(results, UserWithRank{
+				User: user,
+				Rank: int(rank) + 1,
+			})
 		}
 	}
-	_, _ = pipe.Exec(ctx)
 
-	// 3. Assemble Final Response without any DB or extra Redis hits
-	userWithRanks := make([]UserWithRank, 0, len(res))
-	for _, z := range res {
-		member := z.Member.(string)
-		parts := strings.Split(member, ":")
-		if len(parts) < 2 {
-			continue
-		}
-
-		username := parts[0]
-		id, _ := strconv.Atoi(parts[1])
-
-		// Get cached rank from our unique scores map
-		higherCount, _ := uniqueScores[z.Score].Result()
-
-		userWithRanks = append(userWithRanks, UserWithRank{
-			User: models.User{
-				ID:       id,
-				Username: username,
-				Rating:   int(z.Score),
-			},
-			Rank: int(higherCount) + 1,
-		})
-	}
-
-	return userWithRanks, nil
+	return results, nil
 }
 
 func (r *PostgresUserRepository) getLeaderboardSQL(limit int, offset int) ([]UserWithRank, error) {
@@ -160,37 +191,6 @@ func (r *PostgresUserRepository) getLeaderboardSQL(limit int, offset int) ([]Use
 	`
 	err := r.db.Raw(query, limit, offset).Scan(&users).Error
 	return users, err
-}
-
-// GetUserWithRank implements UserRepository.
-func (r *PostgresUserRepository) GetUserWithRank(username string) (*models.User, int, error) {
-	var user models.User
-	err := r.db.Where("username LIKE ?", "%"+username+"%").First(&user).Error
-	if err != nil {
-		return nil, 0, err
-	}
-
-	if r.rdb == nil {
-		return r.getUserWithRankSQL(&user)
-	}
-
-	ctx := context.Background()
-	count, err := r.rdb.ZCount(ctx, LeaderboardKey, "("+strconv.Itoa(user.Rating), "+inf").Result()
-	if err != nil {
-		return &user, 0, nil
-	}
-
-	return &user, int(count) + 1, nil
-}
-
-func (r *PostgresUserRepository) getUserWithRankSQL(user *models.User) (*models.User, int, error) {
-	var rank int64
-	err := r.db.Model(&models.User{}).
-		Where("rating > ?", user.Rating).
-		Select("COUNT(DISTINCT rating)").
-		Scan(&rank).Error
-
-	return user, int(rank) + 1, err
 }
 
 // UpdateRating implements UserRepository.

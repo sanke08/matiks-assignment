@@ -31,7 +31,6 @@ func main() {
 	mux.HandleFunc("POST /users", leaderboardHandler.CreateUser)
 	mux.HandleFunc("PUT /users/rating", leaderboardHandler.UpdateRating)
 	mux.HandleFunc("GET /leaderboard", leaderboardHandler.GetLeaderboard)
-	mux.HandleFunc("GET /users/rank", leaderboardHandler.GetUserWithRank)
 
 	// Simulation routes
 	// mux.HandleFunc("POST /simulation/start", leaderboardHandler.StartSimulation)

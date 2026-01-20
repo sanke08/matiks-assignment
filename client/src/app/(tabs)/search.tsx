@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import { 
   StyleSheet, 
   View, 
@@ -9,47 +9,89 @@ import {
   SafeAreaView, 
   StatusBar,
   Keyboard,
-  Platform
+  Platform,
+  FlatList,
+  RefreshControl
 } from 'react-native';
 import { COLORS, API_URL } from '@/src/constants/Config';
 import { IconSymbol } from '@/src/components/ui/icon-symbol';
 import { LeaderboardItem } from '@/src/components/LeaderboardItem';
 import { ThemedText } from '@/src/components/themed-text';
 
+
+const PAGE_SIZE=50
 interface SearchResult {
-  id: number;
-  username: string;
-  rating: number;
+  ID: number;
+  Username: string;
+  Rating: number;
   rank: number;
 }
 
 export default function SearchScreen() {
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<SearchResult | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [results, setResults] = useState<SearchResult[]>([]);
+  const [hasMore, setHasMore] = useState(true);
   const [error, setError] = useState('');
+  
+  const offsetRef = useRef(0);
 
-  const handleSearch = async () => {
+  const handleSearch = async (isRefresh = false, isLoadMore = false) => {
     if (!query.trim()) return;
     
-    setLoading(true);
-    setError('');
+    if (!isLoadMore) {
+      if (!isRefresh) setLoading(true);
+      setError('');
+      offsetRef.current = 0;
+      setHasMore(true);
+    } else {
+      setLoadingMore(true);
+    }
+
     Keyboard.dismiss();
 
     try {
-      const response = await fetch(`${API_URL}/users/rank?username=${query.trim()}`);
+      const currentOffset = offsetRef.current;
+      const response = await fetch(`${API_URL}/leaderboard?username=${query.trim()}&limit=${PAGE_SIZE}&offset=${currentOffset}`);
       if (!response.ok) {
-        if (response.status === 404) throw new Error('User not found');
         throw new Error('Search failed');
       }
-      const data = await response.json();
-      setResult(data);
+      const data: SearchResult[] = await response.json();
+      
+      if (isLoadMore) {
+        setResults(prev => [...prev, ...(data || [])]);
+      } else {
+        setResults(data || []);
+      }
+
+      if (!data || data.length < PAGE_SIZE) {
+        setHasMore(false);
+      }
+
+      if (!isLoadMore && data && data.length === 0) {
+        setError('No users found');
+      }
     } catch (err: any) {
       setError(err.message || 'Something went wrong');
-      setResult(null);
+      if (!isLoadMore) setResults([]);
     } finally {
       setLoading(false);
+      setRefreshing(false);
+      setLoadingMore(false);
     }
+  };
+
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    handleSearch(true);
+  }, [query]);
+
+  const loadMore = () => {
+    if (!hasMore || loadingMore || loading || !query.trim()) return;
+    offsetRef.current += PAGE_SIZE;
+    handleSearch(false, true);
   };
 
   return (
@@ -65,18 +107,24 @@ export default function SearchScreen() {
           <IconSymbol name="magnifyingglass" size={20} color={COLORS.textMuted} style={styles.searchIcon} />
           <TextInput
             style={styles.input}
-            placeholder="Enter username (e.g. user_00001)"
+            placeholder="Search username (e.g. rahul)"
             placeholderTextColor={COLORS.textMuted}
             value={query}
-            onChangeText={setQuery}
-            onSubmitEditing={handleSearch}
+            onChangeText={(txt) => {
+              setQuery(txt);
+              if (!txt.trim()) {
+                setResults([]);
+                setError('');
+              }
+            }}
+            onSubmitEditing={() => handleSearch()}
             autoCapitalize="none"
             autoCorrect={false}
           />
         </View>
         <TouchableOpacity 
           style={styles.searchButton} 
-          onPress={handleSearch}
+          onPress={() => handleSearch()}
           disabled={loading || !query.trim()}
         >
           {loading ? (
@@ -93,29 +141,40 @@ export default function SearchScreen() {
             <IconSymbol name="exclamationmark.triangle.fill" size={40} color={COLORS.accent} />
             <Text style={styles.errorText}>{error}</Text>
           </View>
-        ) : result ? (
-          <View style={styles.resultWrapper}>
-            <Text style={styles.sectionTitle}>Search Result</Text>
-            <LeaderboardItem 
-              user={{ 
-                ID: result.id, 
-                Username: result.username, 
-                Rating: result.rating 
-              }} 
-              rank={result.rank} 
-            />
-            <View style={styles.statsCard}>
-              <View style={styles.statItem}>
-                <Text style={styles.statLabel}>Status</Text>
-                <Text style={[styles.statValue, { color: '#10b981' }]}>Active Player</Text>
-              </View>
-              <View style={styles.divider} />
-              <View style={styles.statItem}>
-                <Text style={styles.statLabel}>Level</Text>
-                <Text style={styles.statValue}>Pro Tier</Text>
-              </View>
-            </View>
-          </View>
+        ) : results.length > 0 ? (
+          <FlatList
+            data={results}
+            keyExtractor={(item, index) => `${item.ID}-${index}`}
+            ListHeaderComponent={<Text style={styles.sectionTitle}>Search Results ({results.length})</Text>}
+            renderItem={({ item }) => (
+              <LeaderboardItem 
+                user={{ 
+                  ID: item.ID, 
+                  Username: item.Username, 
+                  Rating: item.Rating 
+                }} 
+                rank={item.rank} 
+              />
+            )}
+            contentContainerStyle={styles.listContent}
+            onEndReached={loadMore}
+            onEndReachedThreshold={0.5}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={onRefresh}
+                tintColor={COLORS.primary}
+                colors={[COLORS.primary]}
+              />
+            }
+            ListFooterComponent={
+              loadingMore ? (
+                <View style={styles.footerLoader}>
+                  <ActivityIndicator color={COLORS.primary} />
+                </View>
+              ) : null
+            }
+          />
         ) : (
           <View style={styles.placeholderContainer}>
             <IconSymbol name="person.fill.viewfinder" size={60} color={COLORS.surfaceLight} />
@@ -140,6 +199,10 @@ const styles = StyleSheet.create({
   title: {
     color: COLORS.text,
     fontSize: 28,
+  },
+  footerLoader: {
+    paddingVertical: 20,
+    alignItems: 'center',
   },
   subtitle: {
     color: COLORS.textMuted,
@@ -188,6 +251,9 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingHorizontal: 0,
   },
+  listContent: {
+    paddingBottom: 40,
+  },
   sectionTitle: {
     color: COLORS.text,
     fontSize: 14,
@@ -196,38 +262,6 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 1,
     paddingHorizontal: 20,
-  },
-  resultWrapper: {
-    marginTop: 10,
-  },
-  statsCard: {
-    backgroundColor: COLORS.surface,
-    borderRadius: 0,
-    padding: 20,
-    marginTop: 0,
-    flexDirection: 'row',
-    borderWidth: 1,
-    borderColor: '#222',
-  },
-  statItem: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  statLabel: {
-    color: COLORS.textMuted,
-    fontSize: 10,
-    marginBottom: 4,
-    textTransform: 'uppercase',
-  },
-  statValue: {
-    color: COLORS.text,
-    fontSize: 14,
-    fontWeight: 'bold',
-  },
-  divider: {
-    width: 1,
-    backgroundColor: '#333',
-    marginHorizontal: 10,
   },
   placeholderContainer: {
     flex: 1,
