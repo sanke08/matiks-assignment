@@ -101,7 +101,6 @@ func (h *LeaderboardHandler) UpdateRating(w http.ResponseWriter, r *http.Request
 func (h *LeaderboardHandler) GetLeaderboard(w http.ResponseWriter, r *http.Request) {
 	limitStr := r.URL.Query().Get("limit")
 	offsetStr := r.URL.Query().Get("offset")
-	query := r.URL.Query().Get("username") // Get search filter if any
 
 	limit, err := strconv.Atoi(limitStr)
 	if err != nil || limit <= 0 {
@@ -113,7 +112,7 @@ func (h *LeaderboardHandler) GetLeaderboard(w http.ResponseWriter, r *http.Reque
 		offset = 0
 	}
 
-	users, err := h.leaderboardService.GetLeaderboard(limit, offset, query)
+	users, err := h.leaderboardService.GetLeaderboard(limit, offset)
 
 	if err != nil {
 		http.Error(w, "Failed to get leaderboard", http.StatusInternalServerError)
@@ -122,4 +121,33 @@ func (h *LeaderboardHandler) GetLeaderboard(w http.ResponseWriter, r *http.Reque
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(users)
+}
+
+type userWithRankResponse struct {
+	ID       int    `json:"id"`
+	Username string `json:"username"`
+	Rating   int    `json:"rating"`
+	Rank     int    `json:"rank"`
+}
+
+func (h *LeaderboardHandler) GetUserWithRank(w http.ResponseWriter, r *http.Request) {
+	username := r.URL.Query().Get("username")
+	if username == "" {
+		http.Error(w, "Missing username", http.StatusBadRequest)
+		return
+	}
+
+	user, rank, err := h.leaderboardService.GetUserWithRank(username)
+	if err != nil {
+		http.Error(w, "Failed to get user with rank", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(userWithRankResponse{
+		ID:       user.ID,
+		Username: user.Username,
+		Rating:   user.Rating,
+		Rank:     rank,
+	})
 }

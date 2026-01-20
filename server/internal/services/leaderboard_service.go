@@ -43,7 +43,7 @@ func (s *LeaderboardService) UpdateRating(userId, newRating int) error {
 	return s.userRepo.UpdateRating(userId, newRating)
 }
 
-func (s *LeaderboardService) GetLeaderboard(limit, offset int, query string) ([]repository.UserWithRank, error) {
+func (s *LeaderboardService) GetLeaderboard(limit, offset int) ([]repository.UserWithRank, error) {
 	if limit <= 0 {
 		return nil, errors.New("limit must be greater than 0")
 	}
@@ -52,5 +52,12 @@ func (s *LeaderboardService) GetLeaderboard(limit, offset int, query string) ([]
 		limit = 100
 	}
 
-	return s.userRepo.GetLeaderboard(limit, offset, query)
+	return s.userRepo.GetLeaderboard(limit, offset)
+}
+
+func (s *LeaderboardService) GetUserWithRank(username string) (*models.User, int, error) {
+	if username == "" {
+		return nil, 0, errors.New("username is required")
+	}
+	return s.userRepo.GetUserWithRank(username)
 }
