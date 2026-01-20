@@ -8,11 +8,11 @@ import (
 )
 
 type UserRepository interface {
-	Create(u models.User) error
-	UpdateRating(u models.User, newRating int) error
+	Create(u *models.User) error
+	UpdateRating(userID int, newRating int) error
 	GetByUsername(username string) (*models.User, error)
 	GetLeaderboard(limit, offset int) ([]models.User, error)
-	GetUserWithRank(username string) (models.User, int, error)
+	GetUserWithRank(username string) (*models.User, int, error)
 }
 
 type PostgresUserRepository struct {
@@ -24,7 +24,7 @@ func NewPostgresUserRepository(db *gorm.DB) UserRepository {
 }
 
 // Create implements UserRepository.
-func (r *PostgresUserRepository) Create(u models.User) error {
+func (r *PostgresUserRepository) Create(u *models.User) error {
 	return r.db.Create(&u).Error
 }
 
@@ -58,7 +58,7 @@ func (r *PostgresUserRepository) GetLeaderboard(limit int, offset int) ([]models
 }
 
 // GetUserWithRank implements UserRepository.
-func (r *PostgresUserRepository) GetUserWithRank(username string) (models.User, int, error) {
+func (r *PostgresUserRepository) GetUserWithRank(username string) (*models.User, int, error) {
 	type result struct {
 		ID       int
 		Username string
@@ -77,9 +77,9 @@ func (r *PostgresUserRepository) GetUserWithRank(username string) (models.User, 
 	`
 	err := r.db.Raw(query, username).Scan(&res).Error
 	if err != nil {
-		return models.User{}, 0, err
+		return nil, 0, err
 	}
-	return models.User{
+	return &models.User{
 		ID:       res.ID,
 		Username: res.Username,
 		Rating:   res.Rating,
@@ -87,9 +87,9 @@ func (r *PostgresUserRepository) GetUserWithRank(username string) (models.User, 
 }
 
 // UpdateRating implements UserRepository.
-func (r *PostgresUserRepository) UpdateRating(u models.User, newRating int) error {
+func (r *PostgresUserRepository) UpdateRating(userID int, newRating int) error {
 	res := r.db.Model(&models.User{}).
-		Where("id = ?", u.ID).
+		Where("id = ?", userID).
 		Update("rating", newRating)
 
 	if res.RowsAffected == 0 {
