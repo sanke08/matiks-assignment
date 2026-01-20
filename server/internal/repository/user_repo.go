@@ -93,7 +93,7 @@ func (r *PostgresUserRepository) Create(u *models.User) error {
 // GetByUsername implements UserRepository.
 func (r *PostgresUserRepository) GetByUsername(username string) (*models.User, error) {
 	var user models.User
-	err := r.db.Where("username = ?", username).First(&user).Error
+	err := r.db.Where("username LIKE ?", "%"+username+"%").First(&user).Error
 	return &user, err
 }
 
@@ -110,17 +110,21 @@ func (r *PostgresUserRepository) GetLeaderboard(limit int, offset int) ([]UserWi
 		return []UserWithRank{}, nil
 	}
 
-	// 2. Prepare Pipeline for Ranks
+	// 2. Optimization: Only count unique scores to save Redis resources
+	uniqueScores := make(map[float64]*redis.IntCmd)
 	pipe := r.rdb.Pipeline()
-	rankCmds := make([]*redis.IntCmd, len(res))
-	for i, z := range res {
-		rankCmds[i] = pipe.ZCount(ctx, LeaderboardKey, "("+strconv.FormatFloat(z.Score, 'f', -1, 64), "+inf")
+
+	for _, z := range res {
+		if _, exists := uniqueScores[z.Score]; !exists {
+			// Optimization: Request rank only once per unique score
+			uniqueScores[z.Score] = pipe.ZCount(ctx, LeaderboardKey, "("+strconv.FormatFloat(z.Score, 'f', -1, 64), "+inf")
+		}
 	}
 	_, _ = pipe.Exec(ctx)
 
 	// 3. Assemble Final Response without any DB or extra Redis hits
 	userWithRanks := make([]UserWithRank, 0, len(res))
-	for i, z := range res {
+	for _, z := range res {
 		member := z.Member.(string)
 		parts := strings.Split(member, ":")
 		if len(parts) < 2 {
@@ -129,7 +133,9 @@ func (r *PostgresUserRepository) GetLeaderboard(limit int, offset int) ([]UserWi
 
 		username := parts[0]
 		id, _ := strconv.Atoi(parts[1])
-		rank, _ := rankCmds[i].Result()
+
+		// Get cached rank from our unique scores map
+		higherCount, _ := uniqueScores[z.Score].Result()
 
 		userWithRanks = append(userWithRanks, UserWithRank{
 			User: models.User{
@@ -137,7 +143,7 @@ func (r *PostgresUserRepository) GetLeaderboard(limit int, offset int) ([]UserWi
 				Username: username,
 				Rating:   int(z.Score),
 			},
-			Rank: int(rank) + 1,
+			Rank: int(higherCount) + 1,
 		})
 	}
 
@@ -147,7 +153,7 @@ func (r *PostgresUserRepository) GetLeaderboard(limit int, offset int) ([]UserWi
 func (r *PostgresUserRepository) getLeaderboardSQL(limit int, offset int) ([]UserWithRank, error) {
 	var users []UserWithRank
 	query := `
-		SELECT *, DENSE_RANK() OVER (ORDER BY rating DESC) as rank
+		SELECT *, RANK() OVER (ORDER BY rating DESC) as rank
 		FROM users
 		ORDER BY rating DESC
 		LIMIT ? OFFSET ?
