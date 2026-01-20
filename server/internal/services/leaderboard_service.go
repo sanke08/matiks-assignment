@@ -55,9 +55,9 @@ func (s *LeaderboardService) GetLeaderboard(limit, offset int) ([]repository.Use
 	return s.userRepo.GetLeaderboard(limit, offset)
 }
 
-func (s *LeaderboardService) GetUserWithRank(username string) (*models.User, int, error) {
+func (s *LeaderboardService) SearchUsers(username string) ([]repository.UserWithRank, error) {
 	if username == "" {
-		return nil, 0, errors.New("username is required")
+		return nil, errors.New("username is required")
 	}
-	return s.userRepo.GetUserWithRank(username)
+	return s.userRepo.SearchUsersWithRank(username)
 }

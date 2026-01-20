@@ -24,7 +24,7 @@ type UserRepository interface {
 	UpdateRating(userID int, newRating int) error
 	GetByUsername(username string) (*models.User, error)
 	GetLeaderboard(limit, offset int) ([]UserWithRank, error)
-	GetUserWithRank(username string) (*models.User, int, error)
+	SearchUsersWithRank(query string) ([]UserWithRank, error)
 	SyncToRedis() error
 }
 
@@ -162,35 +162,50 @@ func (r *PostgresUserRepository) getLeaderboardSQL(limit int, offset int) ([]Use
 	return users, err
 }
 
-// GetUserWithRank implements UserRepository.
-func (r *PostgresUserRepository) GetUserWithRank(username string) (*models.User, int, error) {
-	var user models.User
-	err := r.db.Where("username LIKE ?", "%"+username+"%").First(&user).Error
+// SearchUsersWithRank implements UserRepository.
+func (r *PostgresUserRepository) SearchUsersWithRank(query string) ([]UserWithRank, error) {
+	var users []models.User
+	err := r.db.Where("username LIKE ?", "%"+query+"%").
+		Order("rating DESC").
+		Limit(10).
+		Find(&users).Error
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
+
+	results := make([]UserWithRank, 0, len(users))
+	ctx := context.Background()
 
 	if r.rdb == nil {
-		return r.getUserWithRankSQL(&user)
+		for _, u := range users {
+			rank, _ := r.getUserWithRankSQL(&u)
+			results = append(results, UserWithRank{User: u, Rank: rank})
+		}
+		return results, nil
 	}
 
-	ctx := context.Background()
-	count, err := r.rdb.ZCount(ctx, LeaderboardKey, "("+strconv.Itoa(user.Rating), "+inf").Result()
-	if err != nil {
-		return &user, 0, nil
+	pipe := r.rdb.Pipeline()
+	rankCmds := make([]*redis.IntCmd, len(users))
+	for i, u := range users {
+		rankCmds[i] = pipe.ZCount(ctx, LeaderboardKey, "("+strconv.Itoa(u.Rating), "+inf")
+	}
+	_, _ = pipe.Exec(ctx)
+
+	for i, u := range users {
+		count, _ := rankCmds[i].Result()
+		results = append(results, UserWithRank{
+			User: u,
+			Rank: int(count) + 1,
+		})
 	}
 
-	return &user, int(count) + 1, nil
+	return results, nil
 }
 
-func (r *PostgresUserRepository) getUserWithRankSQL(user *models.User) (*models.User, int, error) {
-	var rank int64
-	err := r.db.Model(&models.User{}).
-		Where("rating > ?", user.Rating).
-		Select("COUNT(DISTINCT rating)").
-		Scan(&rank).Error
-
-	return user, int(rank) + 1, err
+func (r *PostgresUserRepository) getUserWithRankSQL(user *models.User) (int, error) {
+	var rank int
+	err := r.db.Raw("SELECT rank FROM (SELECT id, RANK() OVER (ORDER BY rating DESC) as rank FROM users) s WHERE id = ?", user.ID).Scan(&rank).Error
+	return rank, err
 }
 
 // UpdateRating implements UserRepository.

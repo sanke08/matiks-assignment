@@ -9,7 +9,8 @@ import {
   SafeAreaView, 
   StatusBar,
   Keyboard,
-  Platform
+  Platform,
+  FlatList
 } from 'react-native';
 import { COLORS, API_URL } from '@/src/constants/Config';
 import { IconSymbol } from '@/src/components/ui/icon-symbol';
@@ -17,16 +18,17 @@ import { LeaderboardItem } from '@/src/components/LeaderboardItem';
 import { ThemedText } from '@/src/components/themed-text';
 
 interface SearchResult {
-  id: number;
-  username: string;
-  rating: number;
+  ID: number;
+  Username: string;
+  Rating: number;
   rank: number;
 }
 
 export default function SearchScreen() {
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<SearchResult | null>(null);
+  const [results, setResults] = useState<SearchResult[]>([]);
+  const [hasSearched, setHasSearched] = useState(false);
   const [error, setError] = useState('');
 
   const handleSearch = async () => {
@@ -34,19 +36,19 @@ export default function SearchScreen() {
     
     setLoading(true);
     setError('');
+    setHasSearched(true);
     Keyboard.dismiss();
 
     try {
       const response = await fetch(`${API_URL}/users/rank?username=${query.trim()}`);
       if (!response.ok) {
-        if (response.status === 404) throw new Error('User not found');
         throw new Error('Search failed');
       }
       const data = await response.json();
-      setResult(data);
+      setResults(data || []);
     } catch (err: any) {
       setError(err.message || 'Something went wrong');
-      setResult(null);
+      setResults([]);
     } finally {
       setLoading(false);
     }
@@ -93,29 +95,30 @@ export default function SearchScreen() {
             <IconSymbol name="exclamationmark.triangle.fill" size={40} color={COLORS.accent} />
             <Text style={styles.errorText}>{error}</Text>
           </View>
-        ) : result ? (
-          <View style={styles.resultWrapper}>
-            <Text style={styles.sectionTitle}>Search Result</Text>
-            <LeaderboardItem 
-              user={{ 
-                ID: result.id, 
-                Username: result.username, 
-                Rating: result.rating 
-              }} 
-              rank={result.rank} 
-            />
-            <View style={styles.statsCard}>
-              <View style={styles.statItem}>
-                <Text style={styles.statLabel}>Status</Text>
-                <Text style={[styles.statValue, { color: '#10b981' }]}>Active Player</Text>
+        ) : hasSearched ? (
+          <FlatList
+            data={results}
+            keyExtractor={(item) => item.ID.toString()}
+            ListHeaderComponent={() => (
+              <Text style={styles.sectionTitle}>Search Results ({results.length})</Text>
+            )}
+            renderItem={({ item }) => (
+              <LeaderboardItem 
+                user={{ 
+                  ID: item.ID, 
+                  Username: item.Username, 
+                  Rating: item.Rating 
+                }} 
+                rank={item.rank} 
+              />
+            )}
+            ListEmptyComponent={() => (
+              <View style={styles.placeholderContainer}>
+                <IconSymbol name="person.fill.questionmark" size={60} color={COLORS.surfaceLight} />
+                <Text style={styles.placeholderText}>No players found matching "{query}"</Text>
               </View>
-              <View style={styles.divider} />
-              <View style={styles.statItem}>
-                <Text style={styles.statLabel}>Level</Text>
-                <Text style={styles.statValue}>Pro Tier</Text>
-              </View>
-            </View>
-          </View>
+            )}
+          />
         ) : (
           <View style={styles.placeholderContainer}>
             <IconSymbol name="person.fill.viewfinder" size={60} color={COLORS.surfaceLight} />

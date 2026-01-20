@@ -123,13 +123,6 @@ func (h *LeaderboardHandler) GetLeaderboard(w http.ResponseWriter, r *http.Reque
 	json.NewEncoder(w).Encode(users)
 }
 
-type userWithRankResponse struct {
-	ID       int    `json:"id"`
-	Username string `json:"username"`
-	Rating   int    `json:"rating"`
-	Rank     int    `json:"rank"`
-}
-
 func (h *LeaderboardHandler) GetUserWithRank(w http.ResponseWriter, r *http.Request) {
 	username := r.URL.Query().Get("username")
 	if username == "" {
@@ -137,17 +130,12 @@ func (h *LeaderboardHandler) GetUserWithRank(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	user, rank, err := h.leaderboardService.GetUserWithRank(username)
+	users, err := h.leaderboardService.SearchUsers(username)
 	if err != nil {
-		http.Error(w, "Failed to get user with rank", http.StatusInternalServerError)
+		http.Error(w, "Failed to search users", http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(userWithRankResponse{
-		ID:       user.ID,
-		Username: user.Username,
-		Rating:   user.Rating,
-		Rank:     rank,
-	})
+	json.NewEncoder(w).Encode(users)
 }
