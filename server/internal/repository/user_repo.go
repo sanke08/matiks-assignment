@@ -1,11 +1,18 @@
 package repository
 
 import (
-	"errors"
+	"context"
+	"fmt"
 	"leaderboard/internal/models"
+	"log"
+	"strconv"
+	"strings"
 
+	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
 )
+
+const LeaderboardKey = "global_leaderboard"
 
 type UserWithRank struct {
 	models.User
@@ -18,36 +25,126 @@ type UserRepository interface {
 	GetByUsername(username string) (*models.User, error)
 	GetLeaderboard(limit, offset int) ([]UserWithRank, error)
 	GetUserWithRank(username string) (*models.User, int, error)
+	SyncToRedis() error
 }
 
 type PostgresUserRepository struct {
-	db *gorm.DB
+	db  *gorm.DB
+	rdb *redis.Client
 }
 
-func NewPostgresUserRepository(db *gorm.DB) UserRepository {
-	return &PostgresUserRepository{db: db}
+func NewPostgresUserRepository(db *gorm.DB, rdb *redis.Client) UserRepository {
+	repo := &PostgresUserRepository{db: db, rdb: rdb}
+	// Initial sync on startup
+	go func() {
+		if rdb != nil {
+			log.Println("🔄 Initializing Redis leaderboard sync...")
+			if err := repo.SyncToRedis(); err != nil {
+				log.Printf("❌ Redis sync failed: %v", err)
+			} else {
+				log.Println("✅ Redis leaderboard sync completed")
+			}
+		}
+	}()
+	return repo
+}
+
+func (r *PostgresUserRepository) SyncToRedis() error {
+	var users []models.User
+	if err := r.db.Find(&users).Error; err != nil {
+		return err
+	}
+
+	ctx := context.Background()
+	pipe := r.rdb.Pipeline()
+
+	// Clear existing
+	pipe.Del(ctx, LeaderboardKey)
+
+	for _, u := range users {
+		// Store as "username:id" to avoid profile lookups
+		member := fmt.Sprintf("%s:%d", u.Username, u.ID)
+		pipe.ZAdd(ctx, LeaderboardKey, redis.Z{
+			Score:  float64(u.Rating),
+			Member: member,
+		})
+	}
+
+	_, err := pipe.Exec(ctx)
+	return err
 }
 
 // Create implements UserRepository.
 func (r *PostgresUserRepository) Create(u *models.User) error {
-	return r.db.Create(&u).Error
+	if err := r.db.Create(&u).Error; err != nil {
+		return err
+	}
+	if r.rdb != nil {
+		ctx := context.Background()
+		member := fmt.Sprintf("%s:%d", u.Username, u.ID)
+		r.rdb.ZAdd(ctx, LeaderboardKey, redis.Z{
+			Score:  float64(u.Rating),
+			Member: member,
+		})
+	}
+	return nil
 }
 
 // GetByUsername implements UserRepository.
 func (r *PostgresUserRepository) GetByUsername(username string) (*models.User, error) {
 	var user models.User
-	err := r.db.
-		Where("username = ?", username).
-		First(&user).
-		Error
-	if err != nil {
-		return nil, err
-	}
-	return &user, nil
+	err := r.db.Where("username = ?", username).First(&user).Error
+	return &user, err
 }
 
 // GetLeaderboard implements UserRepository.
 func (r *PostgresUserRepository) GetLeaderboard(limit int, offset int) ([]UserWithRank, error) {
+	if r.rdb == nil {
+		return r.getLeaderboardSQL(limit, offset)
+	}
+
+	ctx := context.Background()
+	// 1. Fetch Top N members from Redis
+	res, err := r.rdb.ZRevRangeWithScores(ctx, LeaderboardKey, int64(offset), int64(offset+limit-1)).Result()
+	if err != nil || len(res) == 0 {
+		return []UserWithRank{}, nil
+	}
+
+	// 2. Prepare Pipeline for Ranks
+	pipe := r.rdb.Pipeline()
+	rankCmds := make([]*redis.IntCmd, len(res))
+	for i, z := range res {
+		rankCmds[i] = pipe.ZCount(ctx, LeaderboardKey, "("+strconv.FormatFloat(z.Score, 'f', -1, 64), "+inf")
+	}
+	_, _ = pipe.Exec(ctx)
+
+	// 3. Assemble Final Response without any DB or extra Redis hits
+	userWithRanks := make([]UserWithRank, 0, len(res))
+	for i, z := range res {
+		member := z.Member.(string)
+		parts := strings.Split(member, ":")
+		if len(parts) < 2 {
+			continue
+		}
+
+		username := parts[0]
+		id, _ := strconv.Atoi(parts[1])
+		rank, _ := rankCmds[i].Result()
+
+		userWithRanks = append(userWithRanks, UserWithRank{
+			User: models.User{
+				ID:       id,
+				Username: username,
+				Rating:   int(z.Score),
+			},
+			Rank: int(rank) + 1,
+		})
+	}
+
+	return userWithRanks, nil
+}
+
+func (r *PostgresUserRepository) getLeaderboardSQL(limit int, offset int) ([]UserWithRank, error) {
 	var users []UserWithRank
 	query := `
 		SELECT *, DENSE_RANK() OVER (ORDER BY rating DESC) as rank
@@ -56,45 +153,58 @@ func (r *PostgresUserRepository) GetLeaderboard(limit int, offset int) ([]UserWi
 		LIMIT ? OFFSET ?
 	`
 	err := r.db.Raw(query, limit, offset).Scan(&users).Error
-
-	if err != nil {
-		return nil, err
-	}
-	return users, nil
+	return users, err
 }
 
 // GetUserWithRank implements UserRepository.
 func (r *PostgresUserRepository) GetUserWithRank(username string) (*models.User, int, error) {
 	var user models.User
-	// 1. Get the user's rating
 	err := r.db.Where("username LIKE ?", "%"+username+"%").First(&user).Error
 	if err != nil {
 		return nil, 0, err
 	}
 
-	// 2. Count distinct ratings higher than this user's rating
-	// Rank = (count of distinct ratings > current_rating) + 1
+	if r.rdb == nil {
+		return r.getUserWithRankSQL(&user)
+	}
+
+	ctx := context.Background()
+	count, err := r.rdb.ZCount(ctx, LeaderboardKey, "("+strconv.Itoa(user.Rating), "+inf").Result()
+	if err != nil {
+		return &user, 0, nil
+	}
+
+	return &user, int(count) + 1, nil
+}
+
+func (r *PostgresUserRepository) getUserWithRankSQL(user *models.User) (*models.User, int, error) {
 	var rank int64
-	err = r.db.Model(&models.User{}).
+	err := r.db.Model(&models.User{}).
 		Where("rating > ?", user.Rating).
 		Select("COUNT(DISTINCT rating)").
 		Scan(&rank).Error
 
-	if err != nil {
-		return nil, 0, err
-	}
-
-	return &user, int(rank) + 1, nil
+	return user, int(rank) + 1, err
 }
 
 // UpdateRating implements UserRepository.
 func (r *PostgresUserRepository) UpdateRating(userID int, newRating int) error {
-	res := r.db.Model(&models.User{}).
-		Where("id = ?", userID).
-		Update("rating", newRating)
+	var user models.User
+	if err := r.db.First(&user, userID).Error; err != nil {
+		return err
+	}
 
-	if res.RowsAffected == 0 {
-		return errors.New("user not found")
+	if err := r.db.Model(&user).Update("rating", newRating).Error; err != nil {
+		return err
+	}
+
+	if r.rdb != nil {
+		ctx := context.Background()
+		member := fmt.Sprintf("%s:%d", user.Username, user.ID)
+		r.rdb.ZAdd(ctx, LeaderboardKey, redis.Z{
+			Score:  float64(newRating),
+			Member: member,
+		})
 	}
 
 	return nil

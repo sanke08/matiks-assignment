@@ -8,8 +8,10 @@ import (
 )
 
 type Config struct {
-	DatabaseURL string
-	SrvPort     int
+	DatabaseURL   string
+	SrvPort       int
+	RedisURL      string
+	RedisPassword string
 }
 
 func Load() *Config {
@@ -23,8 +25,20 @@ func Load() *Config {
 		log.Fatal("DATABASE_URL environment variable is not set")
 	}
 
+	redisUrl := os.Getenv("REDIS_URL")
+	if redisUrl == "" {
+		redisUrl = "localhost:6379"
+	}
+
+	redisPassword := os.Getenv("REDIS_PASSWORD")
+	if redisPassword == "" {
+		redisPassword = ""
+	}
+
 	return &Config{
-		DatabaseURL: dbUrl,
-		SrvPort:     8080,
+		DatabaseURL:   dbUrl,
+		RedisURL:      redisUrl,
+		RedisPassword: redisPassword,
+		SrvPort:       8080,
 	}
 }

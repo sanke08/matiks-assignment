@@ -15,8 +15,9 @@ func main() {
 	cfg := config.Load()
 
 	db := database.New(cfg)
+	rdb := database.NewRedis(cfg)
 
-	userRepo := repository.NewPostgresUserRepository(db)
+	userRepo := repository.NewPostgresUserRepository(db, rdb)
 
 	leaderboardService := services.NewLeaderboardService(userRepo)
 
