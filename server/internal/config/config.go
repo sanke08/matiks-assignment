@@ -7,6 +7,7 @@ import (
 
 type Config struct {
 	DatabaseURL string
+	SrvPort     int
 }
 
 func Load() *Config {
@@ -18,5 +19,6 @@ func Load() *Config {
 
 	return &Config{
 		DatabaseURL: dbUrl,
+		SrvPort:     8080,
 	}
 }
