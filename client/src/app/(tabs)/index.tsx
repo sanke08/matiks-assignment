@@ -40,24 +40,24 @@ export default function LeaderboardScreen() {
     }
   };
 
-  const checkSimulationStatus = async () => {
-    try {
-      const response = await fetch(`${API_URL}/simulation/status`);
-      const data = await response.json();
-      setIsSimulating(data.status === 'running');
-    } catch (error) {
-      console.log('Error checking simulation status');
-    }
-  };
+  // const checkSimulationStatus = async () => {
+  //   try {
+  //     const response = await fetch(`${API_URL}/simulation/status`);
+  //     const data = await response.json();
+  //     setIsSimulating(data.status === 'running');
+  //   } catch (error) {
+  //     console.log('Error checking simulation status');
+  //   }
+  // };
 
   useEffect(() => {
     fetchLeaderboard();
-    checkSimulationStatus();
+    // checkSimulationStatus();
 
     // Poll for updates every 2 seconds to show "Live" updates
     const interval = setInterval(() => {
       fetchLeaderboard();
-      checkSimulationStatus();
+      // checkSimulationStatus();
     }, 2000);
 
     return () => clearInterval(interval);
@@ -66,7 +66,7 @@ export default function LeaderboardScreen() {
   const onRefresh = useCallback(() => {
     setRefreshing(true);
     fetchLeaderboard();
-    checkSimulationStatus();
+    // checkSimulationStatus();
   }, []);
 
   if (loading && !refreshing) {
