@@ -57,74 +57,76 @@ export default function SearchScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="light-content" />
-      <View style={styles.header}>
-        <ThemedText type="title" style={styles.title}>Search User</ThemedText>
-        <Text style={styles.subtitle}>Find global rank by username</Text>
-      </View>
-
-      <View style={styles.searchContainer}>
-        <View style={styles.inputWrapper}>
-          <IconSymbol name="magnifyingglass" size={20} color={COLORS.textMuted} style={styles.searchIcon} />
-          <TextInput
-            style={styles.input}
-            placeholder="Enter username (e.g. user_00001)"
-            placeholderTextColor={COLORS.textMuted}
-            value={query}
-            onChangeText={setQuery}
-            onSubmitEditing={handleSearch}
-            autoCapitalize="none"
-            autoCorrect={false}
-          />
+      <View style={styles.mainWrapper}>
+        <View style={styles.header}>
+          <ThemedText type="title" style={styles.title}>Search User</ThemedText>
+          <Text style={styles.subtitle}>Find global rank by username</Text>
         </View>
-        <TouchableOpacity 
-          style={styles.searchButton} 
-          onPress={handleSearch}
-          disabled={loading || !query.trim()}
-        >
-          {loading ? (
-            <ActivityIndicator color={COLORS.white} />
-          ) : (
-            <Text style={styles.searchButtonText}>Search</Text>
-          )}
-        </TouchableOpacity>
-      </View>
 
-      <View style={styles.content}>
-        {error ? (
-          <View style={styles.errorContainer}>
-            <IconSymbol name="exclamationmark.triangle.fill" size={40} color={COLORS.accent} />
-            <Text style={styles.errorText}>{error}</Text>
+        <View style={styles.searchContainer}>
+          <View style={styles.inputWrapper}>
+            <IconSymbol name="magnifyingglass" size={20} color={COLORS.textMuted} style={styles.searchIcon} />
+            <TextInput
+              style={styles.input}
+              placeholder="Enter username (e.g. user_00001)"
+              placeholderTextColor={COLORS.textMuted}
+              value={query}
+              onChangeText={setQuery}
+              onSubmitEditing={handleSearch}
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
           </View>
-        ) : hasSearched ? (
-          <FlatList
-            data={results}
-            keyExtractor={(item) => item.ID.toString()}
-            ListHeaderComponent={() => (
-              <Text style={styles.sectionTitle}>Search Results ({results.length})</Text>
+          <TouchableOpacity 
+            style={styles.searchButton} 
+            onPress={handleSearch}
+            disabled={loading || !query.trim()}
+          >
+            {loading ? (
+              <ActivityIndicator color={COLORS.white} />
+            ) : (
+              <Text style={styles.searchButtonText}>Search</Text>
             )}
-            renderItem={({ item }) => (
-              <LeaderboardItem 
-                user={{ 
-                  ID: item.ID, 
-                  Username: item.Username, 
-                  Rating: item.Rating 
-                }} 
-                rank={item.rank} 
-              />
-            )}
-            ListEmptyComponent={() => (
-              <View style={styles.placeholderContainer}>
-                <IconSymbol name="person.fill.questionmark" size={60} color={COLORS.surfaceLight} />
-                <Text style={styles.placeholderText}>No players found matching "{query}"</Text>
-              </View>
-            )}
-          />
-        ) : (
-          <View style={styles.placeholderContainer}>
-            <IconSymbol name="person.fill.viewfinder" size={60} color={COLORS.surfaceLight} />
-            <Text style={styles.placeholderText}>Search for a player to see their rank</Text>
-          </View>
-        )}
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.content}>
+          {error ? (
+            <View style={styles.errorContainer}>
+              <IconSymbol name="exclamationmark.triangle.fill" size={40} color={COLORS.accent} />
+              <Text style={styles.errorText}>{error}</Text>
+            </View>
+          ) : hasSearched ? (
+            <FlatList
+              data={results}
+              keyExtractor={(item) => item.ID.toString()}
+              ListHeaderComponent={() => (
+                <Text style={styles.sectionTitle}>Search Results ({results.length})</Text>
+              )}
+              renderItem={({ item }) => (
+                <LeaderboardItem 
+                  user={{ 
+                    ID: item.ID, 
+                    Username: item.Username, 
+                    Rating: item.Rating 
+                  }} 
+                  rank={item.rank} 
+                />
+              )}
+              ListEmptyComponent={() => (
+                <View style={styles.placeholderContainer}>
+                  <IconSymbol name="person.fill.questionmark" size={60} color={COLORS.surfaceLight} />
+                  <Text style={styles.placeholderText}>No players found matching "{query}"</Text>
+                </View>
+              )}
+            />
+          ) : (
+            <View style={styles.placeholderContainer}>
+              <IconSymbol name="person.fill.viewfinder" size={60} color={COLORS.surfaceLight} />
+              <Text style={styles.placeholderText}>Search for a player to see their rank</Text>
+            </View>
+          )}
+        </View>
       </View>
     </SafeAreaView>
   );
@@ -135,6 +137,13 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: COLORS.background,
     paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0,
+  },
+  mainWrapper: {
+    flex: 1,
+    width: '100%',
+    maxWidth: 800,
+    alignSelf: 'center',
+    backgroundColor: COLORS.surface,
   },
   header: {
     paddingHorizontal: 20,
@@ -199,38 +208,6 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 1,
     paddingHorizontal: 20,
-  },
-  resultWrapper: {
-    marginTop: 10,
-  },
-  statsCard: {
-    backgroundColor: COLORS.surface,
-    borderRadius: 0,
-    padding: 20,
-    marginTop: 0,
-    flexDirection: 'row',
-    borderWidth: 1,
-    borderColor: '#222',
-  },
-  statItem: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  statLabel: {
-    color: COLORS.textMuted,
-    fontSize: 10,
-    marginBottom: 4,
-    textTransform: 'uppercase',
-  },
-  statValue: {
-    color: COLORS.text,
-    fontSize: 14,
-    fontWeight: 'bold',
-  },
-  divider: {
-    width: 1,
-    backgroundColor: '#333',
-    marginHorizontal: 10,
   },
   placeholderContainer: {
     flex: 1,

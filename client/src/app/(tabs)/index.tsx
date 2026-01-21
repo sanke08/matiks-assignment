@@ -109,44 +109,46 @@ export default function LeaderboardScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="light-content" />
-      <View style={styles.header}>
-        <View>
-          <ThemedText type="title" style={styles.title}>Global Ranks</ThemedText>
-          <Text style={styles.subtitle}>Top Performers</Text>
-        </View>
-      </View>
-
-      <FlatList
-        data={users}
-        keyExtractor={(item, index) => `${item.ID}-${index}`}
-        renderItem={({ item }) => (
-          <LeaderboardItem user={item} rank={item.rank} />
-        )}
-        contentContainerStyle={styles.listContent}
-        showsVerticalScrollIndicator={false}
-        onEndReached={loadMore}
-        onEndReachedThreshold={0.5}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            tintColor={COLORS.primary}
-            colors={[COLORS.primary]}
-          />
-        }
-        ListEmptyComponent={
-          <View style={styles.emptyContainer}>
-            <Text style={styles.emptyText}>No users found in leaderboard.</Text>
+      <View style={styles.mainWrapper}>
+        <View style={styles.header}>
+          <View>
+            <ThemedText type="title" style={styles.title}>Global Ranks</ThemedText>
+            <Text style={styles.subtitle}>Top Performers</Text>
           </View>
-        }
-        ListFooterComponent={
-          loadingMore ? (
-            <View style={styles.footerLoader}>
-              <ActivityIndicator color={COLORS.primary} />
+        </View>
+
+        <FlatList
+          data={users}
+          keyExtractor={(item, index) => `${item.ID}-${index}`}
+          renderItem={({ item }) => (
+            <LeaderboardItem user={item} rank={item.rank} />
+          )}
+          contentContainerStyle={styles.listContent}
+          showsVerticalScrollIndicator={false}
+          onEndReached={loadMore}
+          onEndReachedThreshold={0.5}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor={COLORS.primary}
+              colors={[COLORS.primary]}
+            />
+          }
+          ListEmptyComponent={
+            <View style={styles.emptyContainer}>
+              <Text style={styles.emptyText}>No users found in leaderboard.</Text>
             </View>
-          ) : null
-        }
-      />
+          }
+          ListFooterComponent={
+            loadingMore ? (
+              <View style={styles.footerLoader}>
+                <ActivityIndicator color={COLORS.primary} />
+              </View>
+            ) : null
+          }
+        />
+      </View>
     </SafeAreaView>
   );
 }
@@ -156,6 +158,13 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: COLORS.background,
     paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0,
+  },
+  mainWrapper: {
+    flex: 1,
+    width: '100%',
+    maxWidth: 800,
+    alignSelf: 'center',
+    backgroundColor: COLORS.surface, // Slightly different color for the content wrapper on wide screens
   },
   centered: {
     flex: 1,
@@ -174,6 +183,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 20,
     paddingVertical: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#222',
   },
   title: {
     color: COLORS.text,
